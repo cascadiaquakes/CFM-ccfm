@@ -16,32 +16,32 @@ except ImportError:
 from .constants import EARTH_RAD_KM
 
 
-def destination_pt_at_bearing_distance(
-    start_lon,
-    start_lat,
-    bearing,
-    distance,
-    R: float = EARTH_RAD_KM,
-    bearing_unit="degrees",
-):
-    # Equations from http://www.movable-type.co.uk/scripts/latlong.html
-
-    start_lon_rad, start_lat_rad = np.radians(start_lon), np.radians(start_lat)
-    angular_distance = distance / R
-    if bearing_unit == "degrees":
-        bearing = np.radians(bearing)
-
-    end_lat_rad = np.arcsin(
-        np.sin(start_lat_rad) * np.cos(angular_distance)
-        + np.cos(start_lat_rad) * np.sin(angular_distance) * np.sin(bearing)
-    )
-    end_lon_rad = start_lon_rad + np.arctan2(
-        np.sin(bearing) * np.sin(angular_distance) * np.cos(start_lon_rad),
-        np.cos(angular_distance) - np.sin(start_lat_rad * np.sin(end_lat_rad)),
-    )
-
-    end_lon, end_lat = np.degrees([end_lon_rad, end_lat_rad])
-    return end_lon, end_lat
+# def destination_pt_at_bearing_distance(
+#    start_lon,
+#    start_lat,
+#    bearing,
+#    distance,
+#    R: float = EARTH_RAD_KM,
+#    bearing_unit="degrees",
+# ):
+#    # Equations from http://www.movable-type.co.uk/scripts/latlong.html
+#
+#    start_lon_rad, start_lat_rad = np.radians(start_lon), np.radians(start_lat)
+#    angular_distance = distance / R
+#    if bearing_unit == "degrees":
+#        bearing = np.radians(bearing)
+#
+#    end_lat_rad = np.arcsin(
+#        np.sin(start_lat_rad) * np.cos(angular_distance)
+#        + np.cos(start_lat_rad) * np.sin(angular_distance) * np.sin(bearing)
+#    )
+#    end_lon_rad = start_lon_rad + np.arctan2(
+#        np.sin(bearing) * np.sin(angular_distance) * np.cos(start_lon_rad),
+#        np.cos(angular_distance) - np.sin(start_lat_rad * np.sin(end_lat_rad)),
+#    )
+#
+#    end_lon, end_lat = np.degrees([end_lon_rad, end_lat_rad])
+#    return end_lon, end_lat
 
 
 def mean_azimuth(coords):
@@ -77,6 +77,12 @@ def azimuth(lon_0: float, lat_0: float, lon_1, lat_1):
         r_lat_1
     ) * np.cos(r_lon_1 - r_lon_0)
     azimuth = np.degrees(np.arctan2(y, x))
+
+    while azimuth < 0:
+        azimuth += 360.0
+
+    while azimuth > 360:
+        azimuth -= 360.0
 
     return azimuth
 
@@ -306,25 +312,26 @@ def is_correct_direction(
         return min_az <= azimuth <= max_az
 
 
-def get_values_at_coordinates(geotiff_path, coordinates, low_memory=False,
-                              out_of_bounds_val=-9999):
+def get_values_at_coordinates(
+    geotiff_path, coordinates, low_memory=False, out_of_bounds_val=-9999
+):
     """
     Extract values from a GeoTIFF at given coordinates.
-    
+
     Args:
         geotiff_path (str): Path to the GeoTIFF file
         coordinates (list): List of (longitude, latitude) tuples
-    
+
     Returns:
         list: Values at the specified coordinates
     """
     with rasterio.open(geotiff_path) as src:
         # Transform geographic coordinates to pixel coordinates
         pixel_coords = [src.index(lon, lat) for lon, lat in coordinates]
-        
+
         if low_memory:
             # Read values at pixel coordinates
-            #values = [src.read(1)[row, col] for row, col in pixel_coords]
+            # values = [src.read(1)[row, col] for row, col in pixel_coords]
             values = []
             for row, col in pixel_coords:
                 try:
@@ -333,25 +340,29 @@ def get_values_at_coordinates(geotiff_path, coordinates, low_memory=False,
                     values.append(out_of_bounds_val)
         else:
             data = src.read(1)
-            #values = [data[row, col] for row, col in pixel_coords]
+            # values = [data[row, col] for row, col in pixel_coords]
             values = []
             for row, col in pixel_coords:
                 try:
                     values.append(data[row, col])
                 except IndexError:
                     values.append(out_of_bounds_val)
-        
+
     return values
 
 
-def get_values_at_coordinates_gdal(geotiff_path, coordinates, out_of_bounds_val=-9999):
+def get_values_at_coordinates_gdal(
+    geotiff_path, coordinates, out_of_bounds_val=-9999
+):
     """
-    Extract values from a GeoTIFF at given coordinates using GDAL (no rasterio).
+    Extract values from a GeoTIFF at given coordinates using GDAL
+    (no rasterio).
 
     Args:
         geotiff_path (str): Path to the GeoTIFF file
         coordinates (list): List of (longitude, latitude) tuples
-        out_of_bounds_val (float): Value to return for coordinates outside the raster bounds
+        out_of_bounds_val (float): Value to return for coordinates outside
+        the raster bounds
 
     Returns:
         list: Values at the specified coordinates
@@ -386,12 +397,15 @@ def get_resampled_trace_elevations(
     trace,
     method='nearest',
     elev_grid: Optional[np.ndarray] = None,
-    low_memory: bool= False,
+    low_memory: bool = False,
 ):
     if method == 'nearest':
         for pt in resampled_trace:
             dists = np.array(
-                [haversine_distance(*pt[:2], *trace_pt[:2]) for trace_pt in trace]
+                [
+                    haversine_distance(*pt[:2], *trace_pt[:2])
+                    for trace_pt in trace
+                ]
             )
             min_dist_idx = np.argmin(dists)
             if len(pt) > 2:
@@ -399,15 +413,17 @@ def get_resampled_trace_elevations(
             pt.append(float(trace[min_dist_idx][2]))
 
     elif method == 'sample':
-        elevs = get_values_at_coordinates(elev_grid, resampled_trace,
-                                          low_memory=low_memory)
-        resampled_trace = [cc.append(float(elevs[i])) 
-                           for i, cc in enumerate(resampled_trace)]    
-    
+        elevs = get_values_at_coordinates(
+            elev_grid, resampled_trace, low_memory=low_memory
+        )
+        resampled_trace = [
+            cc.append(float(elevs[i])) for i, cc in enumerate(resampled_trace)
+        ]
+
     else:
         raise NotImplementedError(
-            "Only nearest neighbor interpolation and DEM sampling are" +
-             " currently supported."
+            "Only nearest neighbor interpolation and DEM sampling are"
+            + " currently supported."
         )
     return resampled_trace
 
@@ -418,21 +434,62 @@ def add_fixed_elev_to_trace(trace, elev):
     return trace
 
 
+def get_horiz_distances_for_depth_elevation(elev_m, depths, dip_deg):
+    """
+    Compute horizontal offsets (in km) from a surface point at elevation `elev_m`
+    to a set of absolute target depths `depths_km` (km, typically 0 and negatives),
+    given dip `dip_deg`. The distance for depth==0 is anchored to 0 so the top
+    contour stays at the trace, and distances are clipped at 0.
+    """
+    depths = np.asarray(depths, dtype=float)
+    if dip_deg >= 89.999:  # near-vertical: no horizontal offset
+        return np.zeros_like(depths, dtype=float)
+
+    inv_tan = 1.0 / np.tan(np.radians(dip_deg))
+    # Absolute target z (m) for each depth
+    # Horizontal distance along dip from the trace point to each depth
+    d_km = (elev_m - depths) * inv_tan / 1000.0
+    # Keep the surface point anchored on the trace
+    d_km = np.where(depths == 0.0, 0.0, d_km)
+    # If the point is already deeper than a target depth (rare), don't go "backwards"
+    d_km = np.maximum(d_km, 0.0)
+    return d_km
+
+
+def get_contour_pts(pt, depths, dip, azimuth):
+    # depths in m
+    dists_km = get_horiz_distances_for_depth_elevation(pt[2], depths, dip)
+    hor_pts = terminal_coords_from_bearing_dist(
+        pt[0], pt[1], azimuth, dists_km
+    )
+    depth_profile = list(zip(*hor_pts, depths))
+    profile = [tuple(pt)]
+    profile.extend(depth_profile)
+    return profile
+
+
 def make_3d_fault_mesh(
     fault,
     lower_depth: Optional[float] = None,
+    upper_depth: Optional[float] = None,
     pt_distance: float = 2.0,
     lower_depth_default: float = 16.0,
+    upper_depth_default: float = 0.0,
     check_dip_dir: bool = False,
     decimals: Optional[float] = 3,
 ):
-    # TODO: deal with variable/non-zero trace elevation
     if lower_depth is None:
         lower_depth = fault['properties'].get(
             'lower_depth', lower_depth_default
         )
 
+    if upper_depth is None:
+        upper_depth = fault['properties'].get(
+            'upper_depth', upper_depth_default
+        )
+
     trace = fault['geometry']['coordinates']
+    # Keep a 3D copy and a 2D copy for resampling and azimuths
     if len(trace[0]) == 2:
         trace_3d = [[pt[0], pt[1], 0.0] for pt in trace]
         elev_flag = False
@@ -442,57 +499,72 @@ def make_3d_fault_mesh(
         elev_flag = True
 
     mean_az = mean_azimuth(trace)
-    proj_dir = (mean_az + 90.0) % 360.0  # need to check for RHR
+    proj_dir = (mean_az + 90.0) % 360.0  # right-hand rule check below
 
     if check_dip_dir:
         assert is_correct_direction(
             proj_dir, fault['properties']['dip_dir']
         ), (
             f"The projection direction ({proj_dir})is not consistent with the "
-            + f"dip direction ({fault['properties']['dip_dir']})."
+            f"dip direction ({fault['properties']['dip_dir']})."
         )
 
+    # Resample along-strike trace
     res_trace, pt_distance = sample_polyline(
         trace, pt_distance, return_distance=True
     )
-
-    for pt in res_trace:
-        pt.append(0.0)
-
-    vert_distance = pt_distance * np.sin(
-        np.radians(fault['properties']['dip'])
-    )
-    hor_distance = pt_distance * np.cos(np.radians(fault['properties']['dip']))
-    depths = np.arange(0.0, lower_depth, vert_distance)
-    depths[depths > 0.0] = -1.0 * depths[depths > 0.0]
-
-    mesh = []
-
-    for i, depth in enumerate(depths):
-        if fault["properties"]["dip"] != 90.0:
-            shifted_trace = shift_fault_trace(
-                res_trace, proj_dir, hor_distance * i
-            )
-        else:
-            shifted_trace = res_trace
-        new_trace = [
-            [pt[0], pt[1], (depth * 1000) + res_trace[i][2]]
-            for i, pt in enumerate(shifted_trace)
-        ]
-        mesh.append(new_trace)
-
+    # Populate elevations on the resampled trace (m)
     if elev_flag:
-        resampled_3d_trace = get_resampled_trace_elevations(res_trace, 
-                                                            trace_3d,
-                                                            method='nearest')
-        mesh[0] = resampled_3d_trace
+        resampled_3d_trace = get_resampled_trace_elevations(
+            res_trace, trace_3d, method='nearest'
+        )
+    else:
+        resampled_3d_trace = [[pt[0], pt[1], 0.0] for pt in res_trace]
+
+    min_depth = min(
+        -upper_depth * 1000.0, min([c[2] for c in resampled_3d_trace])
+    )
+    max_depth = -lower_depth * 1000.0
+
+    dip = float(fault['properties']['dip'])
+    # Build a consistent set of target depths (km)
+    vert_distance = pt_distance * np.sin(np.radians(dip)) * 1000.0
+    n_contours = (
+        max(1, int(round((min_depth - max_depth) / vert_distance))) + 1
+    )
+    depths = np.linspace(min_depth, max_depth, n_contours)[1:]  # meters
+
+    # depths = np.arange(0.0, lower_depth, vert_distance)
+    # depths[depths > 0.0] = (
+    #    -1.0 * depths[depths > 0.0]
+    # )  # make negative below surface (km)
+
+    # Build down-dip profiles per trace point
+    profiles = []
+    for pt in resampled_3d_trace:
+        # Horizontal offsets in km to each absolute depth from this point's elevation
+        # if dip == 90.0:
+        # dists_km = np.zeros_like(depths)
+        # Create 3D points along the dip direction
+        # profile = []
+        # for dist_km, depth_km in zip(dists_km, depths):
+        #    lon2, lat2 = terminal_coords_from_bearing_dist(
+        #        lon, lat, proj_dir, dist_km
+        #    )
+        #    z_m = elev_m + depth_km * 1000.0  # absolute z in meters
+        #    profile.append([lon2, lat2, z_m])
+        profile = get_contour_pts(pt, depths, dip, proj_dir)
+        profiles.append(profile)
+
+    # Convert profiles to contour rows
+    mesh = get_contours_from_profiles(
+        profiles, return_top=True, return_bottom=True
+    )
 
     if decimals is not None:
         mesh = np.round(mesh, decimals=decimals).tolist()
 
     return mesh
-
-
 
 
 def make_tri_mesh(mesh_3d):
@@ -527,10 +599,11 @@ def _straight_profile_n_pts(p1, p2, n_pts):
     out_pts = [p1[:2]]
     for n in range(1, n_pts - 1):
         dist = n * pt_distance
-        new_pt = terminal_coords_from_bearing_dist(p1[0], p1[1], profile_az,
-                                                   dist)
+        new_pt = terminal_coords_from_bearing_dist(
+            p1[0], p1[1], profile_az, dist
+        )
         out_pts.append(list(new_pt))
-    
+
     out_pts.append(p2[:2])
 
     return out_pts
