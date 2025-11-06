@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# specific to this repo
+oly_pug_test_dem.tif.aux.xml
+check_3d_proj.py
