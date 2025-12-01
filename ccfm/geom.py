@@ -82,16 +82,19 @@ def azimuth(lon_0: float, lat_0: float, lon_1, lat_1):
 
 
 def haversine_distance(
-    lon_0: float = None,
-    lat_0: float = None,
-    lon_1: float = None,
-    lat_1: float = None,
-    R: float = EARTH_RAD_KM,
+        lon_0: float = None,
+        lat_0: float = None,
+        lon_1: float = None,
+        lat_1: float = None,
+        R: float = EARTH_RAD_KM,
+        *extra,
+        **kwargs,
 ) -> float:
-    """
-    Calculates the great circle distance between two points in lon, lat
-    using the haversine formula.
-    """
+    if extra or kwargs:
+        logging.warning(
+            "haversine_distance got extra args: extra=%r, kwargs=%r, caller=%r",
+            extra, kwargs, inspect.stack()[1]
+        )
     r_lon_0, r_lon_1, r_lat_0, r_lat_1 = np.radians(
         (lon_0, lon_1, lat_0, lat_1)
     )
@@ -121,7 +124,7 @@ def terminal_coords_from_bearing_dist(lon1: float, lat1: float, bearing, dist):
 def polyline_seg_lengths(polyline):
     seg_lengths = np.array(
         [
-            haversine_distance(*polyline[i], *polyline[i + 1])
+            haversine_distance(*polyline[i][:2], *polyline[i + 1][:2])  # keep only lon lat to calculate distance
             for i in range(len(polyline) - 1)
         ]
     )
@@ -161,7 +164,6 @@ def _resample_polyline(polyline, interval_km):
     """
     Resamples a polyline at regular intervals specified in kilometers.
     """
-    # print(f"interpolating polyline at {interval_km} kilometers (_resample_polyline)")
     if len(polyline) < 2:
         return polyline
 
@@ -211,7 +213,7 @@ def adjust_sampling_distance(poly_length, pt_distance):
 
 
 def sample_polyline(
-    polyline, pt_distance, tol=0.1, max_count=100, return_distance=False
+        polyline, pt_distance, tol=0.1, max_count=100, return_distance=False
 ):
     x0 = pt_distance + 0.0
     resampled_line = _resample_polyline(polyline, pt_distance)
@@ -242,9 +244,7 @@ def sample_polyline_to_n_pts(polyline, n_pts, max_count=10):
     while len(new_poly) != n_pts:
         count += 1
         # proportionally adjust the distance to get the correct number of points
-        # print("adjusting")
         pt_distance *= len(new_poly) / n_pts
-        # print("new distance:", pt_distance)
         new_poly = _resample_polyline(polyline, pt_distance)
 
         if count > max_count:
@@ -276,7 +276,7 @@ cardinal_directions = {
 
 
 def is_correct_direction(
-    azimuth, direction, cardinal_directions=cardinal_directions
+        azimuth, direction, cardinal_directions=cardinal_directions
 ):
     """
     Checks if the given azimuth corresponds to the given direction according to
@@ -310,21 +310,21 @@ def get_values_at_coordinates(geotiff_path, coordinates, low_memory=False,
                               out_of_bounds_val=-9999):
     """
     Extract values from a GeoTIFF at given coordinates.
-    
+
     Args:
         geotiff_path (str): Path to the GeoTIFF file
         coordinates (list): List of (longitude, latitude) tuples
-    
+
     Returns:
         list: Values at the specified coordinates
     """
     with rasterio.open(geotiff_path) as src:
         # Transform geographic coordinates to pixel coordinates
         pixel_coords = [src.index(lon, lat) for lon, lat in coordinates]
-        
+
         if low_memory:
             # Read values at pixel coordinates
-            #values = [src.read(1)[row, col] for row, col in pixel_coords]
+            # values = [src.read(1)[row, col] for row, col in pixel_coords]
             values = []
             for row, col in pixel_coords:
                 try:
@@ -333,14 +333,14 @@ def get_values_at_coordinates(geotiff_path, coordinates, low_memory=False,
                     values.append(out_of_bounds_val)
         else:
             data = src.read(1)
-            #values = [data[row, col] for row, col in pixel_coords]
+            # values = [data[row, col] for row, col in pixel_coords]
             values = []
             for row, col in pixel_coords:
                 try:
                     values.append(data[row, col])
                 except IndexError:
                     values.append(out_of_bounds_val)
-        
+
     return values
 
 
@@ -382,11 +382,11 @@ def get_values_at_coordinates_gdal(geotiff_path, coordinates, out_of_bounds_val=
 
 
 def get_resampled_trace_elevations(
-    resampled_trace,
-    trace,
-    method='nearest',
-    elev_grid: Optional[np.ndarray] = None,
-    low_memory: bool= False,
+        resampled_trace,
+        trace,
+        method='nearest',
+        elev_grid: Optional[np.ndarray] = None,
+        low_memory: bool = False,
 ):
     if method == 'nearest':
         for pt in resampled_trace:
@@ -401,13 +401,13 @@ def get_resampled_trace_elevations(
     elif method == 'sample':
         elevs = get_values_at_coordinates(elev_grid, resampled_trace,
                                           low_memory=low_memory)
-        resampled_trace = [cc.append(float(elevs[i])) 
-                           for i, cc in enumerate(resampled_trace)]    
-    
+        resampled_trace = [cc.append(float(elevs[i]))
+                           for i, cc in enumerate(resampled_trace)]
+
     else:
         raise NotImplementedError(
             "Only nearest neighbor interpolation and DEM sampling are" +
-             " currently supported."
+            " currently supported."
         )
     return resampled_trace
 
@@ -419,12 +419,12 @@ def add_fixed_elev_to_trace(trace, elev):
 
 
 def make_3d_fault_mesh(
-    fault,
-    lower_depth: Optional[float] = None,
-    pt_distance: float = 2.0,
-    lower_depth_default: float = 16.0,
-    check_dip_dir: bool = False,
-    decimals: Optional[float] = 3,
+        fault,
+        lower_depth: Optional[float] = None,
+        pt_distance: float = 2.0,
+        lower_depth_default: float = 16.0,
+        check_dip_dir: bool = False,
+        decimals: Optional[float] = 3,
 ):
     # TODO: deal with variable/non-zero trace elevation
     if lower_depth is None:
@@ -448,8 +448,8 @@ def make_3d_fault_mesh(
         assert is_correct_direction(
             proj_dir, fault['properties']['dip_dir']
         ), (
-            f"The projection direction ({proj_dir})is not consistent with the "
-            + f"dip direction ({fault['properties']['dip_dir']})."
+                f"The projection direction ({proj_dir})is not consistent with the "
+                + f"dip direction ({fault['properties']['dip_dir']})."
         )
 
     res_trace, pt_distance = sample_polyline(
@@ -482,7 +482,7 @@ def make_3d_fault_mesh(
         mesh.append(new_trace)
 
     if elev_flag:
-        resampled_3d_trace = get_resampled_trace_elevations(res_trace, 
+        resampled_3d_trace = get_resampled_trace_elevations(res_trace,
                                                             trace_3d,
                                                             method='nearest')
         mesh[0] = resampled_3d_trace
@@ -493,10 +493,7 @@ def make_3d_fault_mesh(
     return mesh
 
 
-
-
 def make_tri_mesh(mesh_3d):
-
     tris = []
 
     for row in range(len(mesh_3d) - 1):
@@ -530,7 +527,7 @@ def _straight_profile_n_pts(p1, p2, n_pts):
         new_pt = terminal_coords_from_bearing_dist(p1[0], p1[1], profile_az,
                                                    dist)
         out_pts.append(list(new_pt))
-    
+
     out_pts.append(p2[:2])
 
     return out_pts
