@@ -6,6 +6,6 @@ from .cfm_io import (
     load_nshm_traces,
     write_cfm_tri_meshes,
     write_cfm_trace_geojson,
-    load_canada_traces,
+    load_nrcan_traces,
     convert_cfm_geojson,
 )
