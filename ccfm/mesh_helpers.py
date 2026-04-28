@@ -1,3 +1,5 @@
+import math
+
 from .geom import (
     sample_polyline,
     sample_polyline_to_n_pts,
@@ -5,10 +7,48 @@ from .geom import (
     haversine_distance,
     _draw_pt_profile,
     get_contours_from_profiles,
+    get_resampled_trace_elevations,
     get_values_at_coordinates,
     polyline_length,
     get_values_at_coordinates_gdal
 )
+
+
+def _contour_has_per_vertex_z(coords, name=None):
+    """
+    Returns True if every vertex has a finite Z, False if no vertex has Z.
+    Raises ValueError if Z is partially defined or contains NaN/None.
+    """
+    if not coords:
+        return False
+    z_present = [len(p) >= 3 and p[2] is not None for p in coords]
+    if not any(z_present):
+        return False
+    if not all(z_present):
+        label = f"contour '{name}'" if name else "a contour"
+        raise ValueError(
+            f"{label} has Z values on some vertices but not others. "
+            "All vertices must have a Z value, or none."
+        )
+    bad = [i for i, p in enumerate(coords)
+           if not isinstance(p[2], (int, float)) or math.isnan(float(p[2]))]
+    if bad:
+        label = f"contour '{name}'" if name else "a contour"
+        raise ValueError(
+            f"{label} has invalid (NaN/non-numeric) Z values at vertex indices: "
+            f"{bad[:10]}{'...' if len(bad) > 10 else ''}."
+        )
+    return True
+
+
+def _resample_contour_with_z(coords, sampled_2d, name=None):
+    """
+    Take a 2D-resampled contour and restore per-vertex Z from the original 3D coords
+    using nearest-vertex assignment. Mutates and returns sampled_2d as 3D.
+    """
+    sampled_lists = [list(p[:2]) for p in sampled_2d]
+    coords_3d = [[float(p[0]), float(p[1]), float(p[2])] for p in coords]
+    return get_resampled_trace_elevations(sampled_lists, coords_3d, method='nearest')
 
 def get_invalid_contour_messages(features, min_points=4):
     """
@@ -44,7 +84,11 @@ def prepare_fault_contours(fault_contours, pt_distance=0.5, elevation_path=None)
     # Resample the top contour using spacing
     trace = fault_contours[0]
     coords = trace['geometry']['coordinates']
-    total_length = polyline_length(coords)
+    trace_name = trace.get('properties', {}).get('name')
+    has_z_top = _contour_has_per_vertex_z(coords, name=trace_name)
+    coords_2d = [[p[0], p[1]] for p in coords]
+
+    total_length = polyline_length(coords_2d)
     n_estimated = int(total_length / pt_distance) + 1
 
     if n_estimated > MAX_POINTS:
@@ -53,8 +97,10 @@ def prepare_fault_contours(fault_contours, pt_distance=0.5, elevation_path=None)
             f"Please increase the spacing."
         )
 
-    trace_sampled = sample_polyline(coords, pt_distance=pt_distance)
-    if len(trace_sampled[0]) == 2:
+    trace_sampled = sample_polyline(coords_2d, pt_distance=pt_distance)
+    if has_z_top:
+        trace_sampled = _resample_contour_with_z(coords, trace_sampled, name=trace_name)
+    else:
         trace_sampled = add_fixed_elev_to_trace(trace_sampled, trace['properties']['elev'])
     contours_out = [trace_sampled]
 
@@ -62,8 +108,14 @@ def prepare_fault_contours(fault_contours, pt_distance=0.5, elevation_path=None)
     n_trace_pts = len(trace_sampled)
     print(f"Number of points: {n_trace_pts} (prepare contours)")
     for contour in fault_contours[1:]:
-        contour_sampled = sample_polyline_to_n_pts(contour['geometry']['coordinates'], n_trace_pts)
-        if len(contour_sampled[0]) == 2:
+        c_coords = contour['geometry']['coordinates']
+        c_name = contour.get('properties', {}).get('name')
+        has_z = _contour_has_per_vertex_z(c_coords, name=c_name)
+        c_coords_2d = [[p[0], p[1]] for p in c_coords]
+        contour_sampled = sample_polyline_to_n_pts(c_coords_2d, n_trace_pts)
+        if has_z:
+            contour_sampled = _resample_contour_with_z(c_coords, contour_sampled, name=c_name)
+        else:
             contour_sampled = add_fixed_elev_to_trace(contour_sampled, contour['properties']['elev'])
         contours_out.append(contour_sampled)
 
