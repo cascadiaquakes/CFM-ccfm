@@ -446,12 +446,12 @@ def make_3d_fault_mesh(
     mean_az = mean_azimuth(trace)
     proj_dir = (mean_az + 90.0) % 360.0  # need to check for RHR
 
-    if check_dip_dir:
-        assert is_correct_direction(
-            proj_dir, fault['properties']['dip_dir']
-        ), (
-                f"The projection direction ({proj_dir})is not consistent with the "
-                + f"dip direction ({fault['properties']['dip_dir']})."
+    if check_dip_dir and not is_correct_direction(
+        proj_dir, fault['properties']['dip_dir']
+    ):
+        raise ValueError(
+            f"The projection direction ({proj_dir}) is not consistent with the "
+            f"dip direction ({fault['properties']['dip_dir']})."
         )
 
     res_trace, pt_distance = sample_polyline(
